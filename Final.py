@@ -183,7 +183,7 @@ if df is not None:
     st.subheader("🤖 Hỏi AI thêm về các job!")
     user_query = st.text_area("Đặt câu hỏi cho AI trả lời:", height=100, placeholder="Vd: Các job phổ biến nhất là gì? Tóm tắt các loại công ty.")
 
-    if st.button("Generate Feedback", type="primary"):
+    if st.button("Hỏi AI", type="primary"):
         if user_query:
             with st.spinner("Generating feedback using Google AI..."):
                 feedback = generate_feedback(data_to_feed, user_query)

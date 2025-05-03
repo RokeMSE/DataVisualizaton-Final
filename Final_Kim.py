@@ -5,7 +5,7 @@ import seaborn as sns
 import numpy as np
 import plotly.express as px
 from matplotlib.backends.backend_pdf import PdfPages
-from io import BytesIO
+from io import BytesIO, StringIO
 import csv
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
@@ -14,6 +14,9 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from collections import Counter
 import re
+import google.generativeai as genai
+import os
+from dotenv import load_dotenv
 
 # Thiết lập cấu hình trang
 st.set_page_config(page_title="Phân Tích Tuyển Dụng Việt Nam", page_icon="💼", layout="wide", initial_sidebar_state="expanded")
@@ -22,6 +25,14 @@ st.set_page_config(page_title="Phân Tích Tuyển Dụng Việt Nam", page_icon
 sns.set_palette("colorblind")
 PALETTE = ["#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#CC6677", "#882255", "#AA4499"]
 
+# --- Load Environment Variables ---
+load_dotenv()  # Load variables from .env file
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# --- Configure AI ---
+MODEL_NAME = "gemini-2.0-flash"
+
+        
 # --- Hàm tạo PDF từ figure ---
 def save_fig_to_pdf(fig):
     buffer = BytesIO()
@@ -169,13 +180,12 @@ def plot_experience_salary(df, chart_type='Box'):
     
     return fig
 
-# --- Tải dữ liệu từ người dùng ---
-st.sidebar.header("Tải Dữ Liệu")
-uploaded_file = st.sidebar.file_uploader("Tải lên tệp CSV", type=["csv"])
-if uploaded_file is not None:
-    df = load_and_preprocess_data(uploaded_file)
-else:
-    st.warning("Vui lòng tải lên tệp CSV để tiếp tục.")
+# --- Tải dữ liệu cố định ---
+DATA_FILE = "Data/cleaned_vietnamese_job_posting.csv"
+try:
+    df = load_and_preprocess_data(DATA_FILE)
+except FileNotFoundError:
+    st.error(f"🚨 Không tìm thấy file dữ liệu: {DATA_FILE}. Vui lòng kiểm tra đường dẫn và thử lại.")
     st.stop()
 
 # --- CSS ---
@@ -403,12 +413,14 @@ elif page == "2. Thống Kê Mô Tả":
             if cat_select:
                 grouped = filtered_df.groupby('primary_location')[cat_select].value_counts().unstack(fill_value=0)
                 grouped = grouped.reindex(selected_locations)
+                grouped = grouped.sort_index(ascending=False)
                 
                 fig, ax = plt.subplots(figsize=(20, 16))
                 grouped.plot(kind='bar', stacked=True, ax=ax, colormap='tab20')
                 ax.set_title(f"Phân Phối '{cat_select}' Theo Địa Điểm Đã Chọn", fontsize=16, pad=10)
                 ax.set_xlabel("Địa điểm", fontsize=14)
                 ax.set_ylabel("Số lượng", fontsize=14)
+                
                 plt.xticks(rotation=90, ha='right')
                 plt.tight_layout()
                 st.pyplot(fig)
@@ -448,15 +460,17 @@ elif page == "3. Phân Tích Chuyên Sâu":
         </style>
     """, unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
         "📊 Thống Kê Chung",
+        "📈 Số lượng tin tuyển dụng theo danh mục",
         "💰 Mức Lương Theo Danh Mục",
         "🕒 Kinh Nghiệm & Mức Lương",
         "📍 Phân Bố Địa Điểm",
         "🔗 Tương Quan",
         "📈 Phân Tích Song Biến",
         "📈 Xu Hướng Theo Thời Gian",
-        "🤖 Phân Tích AI"
+        "🌟 Dự đoán",
+        "🤖 Phân Tích AI với Google Gemini"
     ])
 
     with tab1:
@@ -497,183 +511,206 @@ elif page == "3. Phân Tích Chuyên Sâu":
             st.metric("Mức Lương Tối Thiểu Cao Nhất", f"{max_min_salary:.2f} triệu" if not pd.isna(max_min_salary) else "N/A")
         with col10:
             st.metric("Danh Mục Lương Cao Nhất", highest_salary_category)
-
+    
     with tab2:
-        st.markdown('<div class="section-title">Mức Lương Theo Danh Mục Công Việc</div>', unsafe_allow_html=True)
+        st.markdown("##### Số lượng tin tuyển dụng theo ngành")
+        # Calculate the count of job postings for each category
+        category_counts = df['primary_category'].value_counts().reset_index()
+        category_counts.columns = ['Ngành nghề', 'Số lượng tin']
+
+        top_n_cat = st.slider("Chọn Top N ngành nghề:", 5, min(30, len(category_counts)), 15, key='slider_cat_count_market')
+        if not category_counts.empty:
+            fig_cat_bar = px.bar(category_counts.head(top_n_cat), x='Số lượng tin', y='Ngành nghề', orientation='h', title=f'Top {top_n_cat} Ngành Nghề Nhiều Tin Nhất', text_auto=True, color='Số lượng tin', color_continuous_scale=px.colors.sequential.Blues)
+            fig_cat_bar.update_layout(yaxis={'categoryorder':'total ascending'}, height=max(400, top_n_cat*25), showlegend=False, uniformtext_minsize=8, uniformtext_mode='hide')
+            fig_cat_bar.update_traces(textposition='outside')
+            st.plotly_chart(fig_cat_bar, use_container_width=True)
+        else:
+            st.info("Không có dữ liệu ngành nghề.")
+            
+        # Biểu đồ Boxplot: Mối quan hệ giữa số lượng bài đăng và kinh nghiệm
+        st.markdown('<div class="chart-title">Mối Quan Hệ Giữa Số Lượng Bài Đăng và Kinh Nghiệm</div>', unsafe_allow_html=True)
+        job_counts = df.groupby('min_experience_years')['job_title'].count().reset_index()
+        job_counts.columns = ['min_experience_years', 'job_count']
+        fig, ax = plt.subplots(figsize=(14, 8))
+        sns.barplot(
+            x="min_experience_years",
+            y="job_count",
+            data=job_counts,
+            palette="coolwarm",
+            ax=ax
+        )
+        ax.set_ylabel("Số Lượng Bài Đăng", fontsize=12)
+        ax.set_xlabel("Số Năm Kinh Nghiệm Tối Thiểu", fontsize=12)
+        ax.set_title("Mối Quan Hệ Giữa Số Lượng Bài Đăng và Kinh Nghiệm", fontsize=14, pad=15)
+        plt.tight_layout()
+        st.pyplot(fig)
+
+        pdf_buffer = save_fig_to_pdf(fig)
+        st.download_button(
+            label="📥 Lưu Biểu Đồ Dưới Dạng PDF",
+            data=pdf_buffer,
+            file_name="SoLuongBaiDang_vs_KinhNghiem_Boxplot.pdf",
+            mime="application/pdf"
+        )
         
+    with tab3:
+        st.markdown('<div class="section-title">Mức Lương Theo Danh Mục Công Việc</div>', unsafe_allow_html=True)
+
+        # Bộ lọc danh mục công việc
         st.markdown('<div class="filter-box">', unsafe_allow_html=True)
-        categories = df['primary_category'].unique().tolist()
+        all_categories = df['primary_category'].dropna().unique().tolist()
         selected_categories = st.multiselect(
             "Chọn các danh mục công việc (bỏ trống để chọn tất cả):",
-            options=categories,
-            default=categories,
+            options=all_categories,
+            default=all_categories,
             key="filter_categories_salary"
-        )
-        min_salary_range = st.slider(
-            "Chọn khoảng mức lương tối thiểu (triệu VND):",
-            min_value=float(df['min_salary_mil_vnd'].min()),
-            max_value=float(df['min_salary_mil_vnd'].max()),
-            value=(float(df['min_salary_mil_vnd'].min()), float(df['min_salary_mil_vnd'].max())),
-            step=1.0
-        )
-
-        y_axis_value = st.selectbox(
-            "Chọn giá trị trên trục Y:",
-            ["Số lượng bài đăng", "Mức lương tối thiểu trung bình", "Mức lương tối đa trung bình"],
-            key="y_axis_salary"
         )
         st.markdown('</div>', unsafe_allow_html=True)
 
-        filtered_df = df.copy()
+        # Lọc dữ liệu theo danh mục công việc
         if selected_categories:
-            filtered_df = filtered_df[filtered_df['primary_category'].isin(selected_categories)]
-        filtered_df = filtered_df[
-            (filtered_df['min_salary_mil_vnd'] >= min_salary_range[0]) &
-            (filtered_df['min_salary_mil_vnd'] <= min_salary_range[1])
-        ]
-
-        chart_type = st.radio("Chọn loại biểu đồ:", ["Box", "Histogram"])
-        st.markdown('<div class="chart-title">Biểu Đồ Phân Tích</div>', unsafe_allow_html=True)
-        
-        if y_axis_value == "Số lượng bài đăng":
-            if chart_type == "Box":
-                fig, ax = plt.subplots(figsize=(14, 8))
-                sns.boxplot(x="primary_category", y="min_salary_mil_vnd", data=filtered_df, ax=ax, order=selected_categories if selected_categories else categories)
-                ax.set_ylabel("Mức Lương Tối Thiểu (triệu VND)", fontsize=12)
-                ax.set_title("Mức Lương Theo Danh Mục Công Việc (Boxplot)", fontsize=14, pad=15)
-                ax.set_xlabel("Danh Mục Công Việc", fontsize=12)
-                plt.xticks(rotation=90)
-                plt.tight_layout()
-                st.pyplot(fig)
-                pdf_buffer = save_fig_to_pdf(fig)
-                st.download_button(
-                    label="📥 Lưu Biểu Đồ Dưới Dạng PDF",
-                    data=pdf_buffer,
-                    file_name="Luong_Theo_DanhMuc_Box.pdf",
-                    mime="application/pdf"
-                )
-            elif chart_type == "Histogram":
-                unique_categories = filtered_df["primary_category"].unique()
-                num_categories = len(unique_categories)
-                if num_categories == 0:
-                    st.warning("Không có danh mục nào để hiển thị sau khi lọc. Vui lòng kiểm tra bộ lọc.")
-                else:
-                    for i, category in enumerate(unique_categories):
-                        st.markdown(f"**Histogram cho danh mục: {category}**", unsafe_allow_html=True)
-                        fig, ax = plt.subplots(figsize=(14, 8))
-                        sns.histplot(filtered_df[filtered_df["primary_category"] == category]["min_salary_mil_vnd"], kde=True, ax=ax, color=PALETTE[i % len(PALETTE)])
-                        ax.set_title(f"Phân Bố Mức Lương Tối Thiểu - {category}", fontsize=14, pad=15)
-                        ax.set_xlabel("Mức Lương Tối Thiểu (triệu VND)", fontsize=12)
-                        ax.set_ylabel("Số Lượng Bài Đăng", fontsize=12)
-                        plt.tight_layout()
-                        st.pyplot(fig)
-                        pdf_buffer = save_fig_to_pdf(fig)
-                        st.download_button(
-                            label=f"📥 Lưu Biểu Đồ Dưới Dạng PDF ({category})",
-                            data=pdf_buffer,
-                            file_name=f"Luong_Theo_DanhMuc_Histogram_{category}.pdf",
-                            mime="application/pdf"
-                        )
+            filtered_df = df[df['primary_category'].isin(selected_categories)]
         else:
-            if y_axis_value == "Mức lương tối thiểu trung bình":
-                grouped = filtered_df.groupby("primary_category")["min_salary_mil_vnd"].mean().reset_index()
-                y_col = "min_salary_mil_vnd"
-                y_label = "Mức Lương Tối Thiểu Trung Bình (triệu VND)"
-            else:
-                grouped = filtered_df.groupby("primary_category")["max_salary_mil_vnd"].mean().reset_index()
-                y_col = "max_salary_mil_vnd"
-                y_label = "Mức Lương Tối Đa Trung Bình (triệu VND)"
-            
+            filtered_df = df.copy()  # Nếu không chọn danh mục, sử dụng toàn bộ dữ liệu
+
+        if filtered_df.empty:
+            st.warning("Không có dữ liệu hợp lệ sau khi lọc. Vui lòng chọn lại danh mục.")
+        else:
+            st.markdown('<div class="chart-title">Mức Lương Tối Thiểu Theo Danh Mục Công Việc (Bar Chart)</div>', unsafe_allow_html=True)
+            grouped_min_salary = (
+                filtered_df
+                .groupby("primary_category", as_index=False)["min_salary_mil_vnd"]
+                .mean()
+                .sort_values("min_salary_mil_vnd", ascending=False)
+            )
+
             fig, ax = plt.subplots(figsize=(14, 8))
-            if chart_type == "Box":
-                sns.barplot(x="primary_category", y=y_col, data=grouped, ax=ax, order=selected_categories if selected_categories else categories)
-            elif chart_type == "Histogram":
-                sns.histplot(grouped[y_col], kde=True, ax=ax)
-            ax.set_title("Mức Lương Theo Danh Mục Công Việc", fontsize=14, pad=15)
+            sns.barplot(
+                x="primary_category",
+                y="min_salary_mil_vnd",
+                data=grouped_min_salary,
+                palette="Blues",
+                ax=ax,
+                order=selected_categories if selected_categories else grouped_min_salary['primary_category'].tolist()
+            )
+            ax.set_ylabel("Mức Lương Tối Thiểu Trung Bình (triệu VND)", fontsize=12)
             ax.set_xlabel("Danh Mục Công Việc", fontsize=12)
-            ax.set_ylabel(y_label, fontsize=12)
+            ax.set_title(f"Mức Lương Tối Thiểu", fontsize=14, pad=15)
             plt.xticks(rotation=90)
             plt.tight_layout()
             st.pyplot(fig)
+
             pdf_buffer = save_fig_to_pdf(fig)
             st.download_button(
                 label="📥 Lưu Biểu Đồ Dưới Dạng PDF",
                 data=pdf_buffer,
-                file_name=f"Luong_Theo_DanhMuc_{chart_type}.pdf",
+                file_name="Luong_ToiThieu_TheoDanhMuc.pdf",
+                mime="application/pdf"
+            )
+
+            st.markdown('<div class="chart-title">Mức Lương Tối Đa Theo Danh Mục Công Việc (Bar Chart)</div>', unsafe_allow_html=True)
+            grouped_max_salary = (
+                filtered_df
+                .groupby("primary_category", as_index=False)["max_salary_mil_vnd"]
+                .mean()
+                .sort_values("max_salary_mil_vnd", ascending=False)
+            )
+
+            fig, ax = plt.subplots(figsize=(14, 8))
+            sns.barplot(
+                x="primary_category",
+                y="max_salary_mil_vnd",
+                data=grouped_max_salary,
+                palette="Greens",
+                ax=ax,
+                order=selected_categories if selected_categories else grouped_max_salary['primary_category'].tolist()
+            )
+            ax.set_ylabel("Mức Lương Tối Đa Trung Bình (triệu VND)", fontsize=12)
+            ax.set_xlabel("Danh Mục Công Việc", fontsize=12)
+            ax.set_title(f"Mức Lương Tối Đa", fontsize=14, pad=15)
+            plt.xticks(rotation=90)
+            plt.tight_layout()
+            st.pyplot(fig)
+
+            pdf_buffer = save_fig_to_pdf(fig)
+            st.download_button(
+                label="📥 Lưu Biểu Đồ Dưới Dạng PDF",
+                data=pdf_buffer,
+                file_name="Luong_ToiDa_TheoDanhMuc.pdf",
+                mime="application/pdf"
+            )
+    with tab4:
+        st.markdown('<div class="section-title">Kinh Nghiệm & Mức Lương</div>', unsafe_allow_html=True)
+
+        filtered_df = df[['min_experience_years', 'min_salary_mil_vnd', 'max_salary_mil_vnd']].dropna()
+        filtered_df = filtered_df.replace([np.inf, -np.inf], np.nan).dropna()
+        filtered_df = filtered_df[filtered_df['min_experience_years'] <= 5]
+
+        if filtered_df.empty:
+            st.warning("Không có dữ liệu hợp lệ cho kinh nghiệm từ 0-5 năm.")
+        else:
+            st.markdown('<div class="chart-title">Mức Lương Tối Thiểu Theo Kinh Nghiệm</div>', unsafe_allow_html=True)
+            fig, ax = plt.subplots(figsize=(12, 7))
+            sns.boxplot(
+                x="min_experience_years",
+                y="min_salary_mil_vnd",
+                data=filtered_df,
+                palette="coolwarm",
+                ax=ax
+            )
+            ax.set_title("Phân phối Mức lương Tối thiểu theo Kinh nghiệm Tối thiểu (0-5 Năm)", fontsize=16)
+            ax.set_xlabel("Kinh nghiệm Tối thiểu (Năm)", fontsize=12)
+            ax.set_ylabel("Mức lương Tối thiểu (Triệu VND)", fontsize=12)
+            ax.tick_params(axis='x', labelsize=10)
+            ax.tick_params(axis='y', labelsize=10)
+            plt.tight_layout()
+            st.pyplot(fig)
+
+            pdf_buffer = save_fig_to_pdf(fig)
+            st.download_button(
+                label="📥 Lưu Biểu Đồ Dưới Dạng PDF",
+                data=pdf_buffer,
+                file_name="Luong_ToiThieu_TheoKinhNghiem.pdf",
+                mime="application/pdf"
+            )
+            
+            st.markdown('<div class="chart-title">Mức Lương Tối Đa Theo Kinh Nghiệm</div>', unsafe_allow_html=True)
+            fig, ax = plt.subplots(figsize=(12, 7))
+            sns.boxplot(
+                x="min_experience_years",
+                y="max_salary_mil_vnd",
+                data=filtered_df,
+                palette="coolwarm",
+                ax=ax
+            )
+            ax.set_title("Phân phối Mức lương Tối đa theo Kinh nghiệm Tối thiểu (0-5 Năm)", fontsize=16)
+            ax.set_xlabel("Kinh nghiệm Tối thiểu (Năm)", fontsize=12)
+            ax.set_ylabel("Mức lương Tối đa (Triệu VND)", fontsize=12)
+            ax.tick_params(axis='x', labelsize=10)
+            ax.tick_params(axis='y', labelsize=10)
+            plt.tight_layout()
+            st.pyplot(fig)
+
+            pdf_buffer = save_fig_to_pdf(fig)
+            st.download_button(
+                label="📥 Lưu Biểu Đồ Dưới Dạng PDF",
+                data=pdf_buffer,
+                file_name="Luong_ToiDa_TheoKinhNghiem.pdf",
                 mime="application/pdf"
             )
 
         with st.expander("💡 Xem Nhận Xét Chi Tiết"):
             st.markdown("""
-            - **Biểu đồ Boxplot/Histogram:**
-              - **Boxplot:** Thể hiện phân phối mức lương tối thiểu theo danh mục công việc. Trung vị (đường giữa hộp) cho thấy mức lương trung bình, IQR (độ cao hộp) cho thấy sự biến động, và các điểm ngoại lai cho thấy các mức lương bất thường.
-              - **Histogram:** Thể hiện phân bố chi tiết của mức lương trong mỗi danh mục, với đường KDE để thấy xu hướng.
+            - **Biểu đồ Boxplot:**
+            - Thể hiện phân phối mức lương tối thiểu và tối đa theo số năm kinh nghiệm (0-5 năm). 
+            - Đường giữa là trung vị, hộp là khoảng tứ phân vị (IQR), các điểm là outliers.
             - **Nhận xét:**
-              - Các danh mục như IT, Tài chính có xu hướng có mức lương cao hơn.
-              - Sự biến động lương (IQR) khác nhau giữa các danh mục, cho thấy mức độ đa dạng trong cơ hội lương.
-              - Các điểm ngoại lai ở một số danh mục có thể là các vị trí cấp cao hoặc đặc thù.
+            - Kinh nghiệm từ 0-1 năm có mức lương thấp nhất, với ít biến động.
+            - Từ 2-5 năm, mức lương tăng đáng kể, nhưng cũng có nhiều điểm ngoại lai (các vị trí lương cao bất thường).
+            - Mối quan hệ giữa kinh nghiệm và lương không hoàn toàn tuyến tính, do các yếu tố khác như danh mục công việc hoặc địa điểm.
             """)
 
-    with tab3:
-        st.markdown('<div class="section-title">Kinh Nghiệm & Mức Lương</div>', unsafe_allow_html=True)
-
-        y_axis_value = st.selectbox(
-            "Chọn giá trị trên trục Y:",
-            ["Số lượng bài đăng", "Mức lương tối thiểu trung bình", "Mức lương tối đa trung bình"],
-            key="y_axis_exp"
-        )
-
-        chart_type = st.radio("Chọn loại biểu đồ:", ["Box", "Scatter"])
-        st.markdown('<div class="chart-title">Biểu Đồ Phân Tích</div>', unsafe_allow_html=True)
-
-        fig, ax = plt.subplots(figsize=(12, 7))
-        if y_axis_value == "Số lượng bài đăng":
-            if chart_type == "Box":
-                sns.boxplot(x="min_experience_years", y="min_salary_mil_vnd", data=df, ax=ax)
-                ax.set_ylabel("Số lượng bài đăng", fontsize=12)
-            elif chart_type == "Scatter":
-                sns.scatterplot(x="min_experience_years", y="min_salary_mil_vnd", data=df, ax=ax)
-                ax.set_ylabel("Số lượng bài đăng", fontsize=12)
-        else:
-            if y_axis_value == "Mức lương tối thiểu trung bình":
-                grouped = df.groupby("min_experience_years")["min_salary_mil_vnd"].mean().reset_index()
-                y_col = "min_salary_mil_vnd"
-                y_label = "Mức Lương Tối Thiểu Trung Bình (triệu VND)"
-            else:
-                grouped = df.groupby("min_experience_years")["max_salary_mil_vnd"].mean().reset_index()
-                y_col = "max_salary_mil_vnd"
-                y_label = "Mức Lương Tối Đa Trung Bình (triệu VND)"
-
-            if chart_type == "Box":
-                sns.barplot(x="min_experience_years", y=y_col, data=grouped, ax=ax)
-            elif chart_type == "Scatter":
-                sns.scatterplot(x="min_experience_years", y=y_col, data=grouped, ax=ax)
-            ax.set_ylabel(y_label, fontsize=12)
-
-        ax.set_title("Kinh Nghiệm và Mức Lương", fontsize=14, pad=15)
-        ax.set_xlabel("Số Năm Kinh Nghiệm Tối Thiểu", fontsize=12)
-        plt.tight_layout()
-        st.pyplot(fig)
-        pdf_buffer = save_fig_to_pdf(fig)
-        st.download_button(
-            label="📥 Lưu Biểu Đồ Dưới Dạng PDF",
-            data=pdf_buffer,
-            file_name=f"KinhNghiem_Luong_{chart_type}.pdf",
-            mime="application/pdf"
-        )
-
-        with st.expander("💡 Xem Nhận Xét Chi Tiết"):
-            st.markdown("""
-            - **Biểu đồ Boxplot/Scatter:**
-              - **Boxplot:** Thể hiện phân phối mức lương tối thiểu theo số năm kinh nghiệm (0-5 năm). Trung vị tăng theo kinh nghiệm, cho thấy kinh nghiệm cao hơn thường có lương cao hơn.
-              - **Scatter:** Hiển thị mối quan hệ giữa kinh nghiệm và lương, với các điểm phân tán cho thấy sự đa dạng trong mức lương cho cùng mức kinh nghiệm.
-            - **Nhận xét:**
-              - Kinh nghiệm từ 0-1 năm có mức lương thấp nhất, với ít biến động.
-              - Từ 2-5 năm, mức lương tăng đáng kể, nhưng cũng có nhiều điểm ngoại lai (các vị trí lương cao bất thường).
-              - Mối quan hệ giữa kinh nghiệm và lương không hoàn toàn tuyến tính, do các yếu tố khác như danh mục công việc hoặc địa điểm.
-            """)
-
-    with tab4:
+    with tab5:
         st.markdown('<div class="section-title">Phân Bố Địa Điểm Tuyển Dụng</div>', unsafe_allow_html=True)
 
         st.markdown('<div class="filter-box">', unsafe_allow_html=True)
@@ -746,7 +783,7 @@ elif page == "3. Phân Tích Chuyên Sâu":
                 mime="application/pdf"
             )
 
-    with tab5:
+    with tab6:
         st.markdown('<div class="section-title">Biểu Đồ Tương Quan (Heatmap)</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="filter-box">', unsafe_allow_html=True)
@@ -807,7 +844,7 @@ elif page == "3. Phân Tích Chuyên Sâu":
               - **Kinh nghiệm tối thiểu và tối đa:** Tương quan cao, vì nhiều bài đăng yêu cầu một khoảng kinh nghiệm cụ thể.
             """)
 
-    with tab6:
+    with tab7:
         st.markdown('<div class="section-title">Phân Tích Song Biến</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="filter-box">', unsafe_allow_html=True)
@@ -867,7 +904,7 @@ elif page == "3. Phân Tích Chuyên Sâu":
                     mime="application/pdf"
                 )
 
-    with tab7:
+    with tab8:
         st.markdown('<div class="section-title">Biểu Đồ Xu Hướng</div>', unsafe_allow_html=True)
 
         grouped = df.groupby("min_experience_years")[["min_salary_mil_vnd", "max_salary_mil_vnd"]].mean().reset_index()
@@ -904,7 +941,7 @@ elif page == "3. Phân Tích Chuyên Sâu":
               - Sự khác biệt giữa mức lương tối thiểu và tối đa có thể phản ánh sự đa dạng trong các vị trí công việc.
             """)
 
-    with tab8:
+    with tab9:
         st.markdown('<div class="section-title">Phân Tích AI</div>', unsafe_allow_html=True)
         
         st.markdown('<div class="filter-box">', unsafe_allow_html=True)
@@ -926,9 +963,9 @@ elif page == "3. Phân Tích Chuyên Sâu":
         else:
             # Phân tích dự đoán lương
             st.markdown('<div class="chart-title">Dự Đoán Mức Lương</div>', unsafe_allow_html=True)
-            model, results, X_test = predict_salary(filtered_df)
+            salary_model, results, X_test = predict_salary(filtered_df)
             
-            if model is None:
+            if salary_model is None:
                 st.warning("Không đủ dữ liệu để huấn luyện mô hình dự đoán lương.")
             else:
                 fig, ax = plt.subplots(figsize=(10, 6))
@@ -963,7 +1000,7 @@ elif page == "3. Phân Tích Chuyên Sâu":
                         'primary_category': [category],
                         'primary_location': [location]
                     })
-                    pred_salary = model.predict(input_data)[0]
+                    pred_salary = salary_model.predict(input_data)[0]
                     st.success(f"Mức lương tối thiểu dự đoán: {pred_salary:.2f} triệu VND")
 
             # Phân tích kỹ năng
@@ -999,6 +1036,111 @@ elif page == "3. Phân Tích Chuyên Sâu":
               - Trích xuất các kỹ năng phổ biến từ yêu cầu công việc, hiển thị tần suất xuất hiện.
               - Nhận xét: Các kỹ năng như Python, SQL, hoặc quản lý thường xuất hiện nhiều trong các danh mục công nghệ và kinh doanh, phản ánh nhu cầu thị trường.
             """)
+            
+    with tab10:
+        if not GEMINI_API_KEY:
+            st.error("🚨 GEMINI_API_KEY environment variable not found. Please set it in your .env file.")
+            st.stop()
+        else:
+            try:
+                genai.configure(api_key=GEMINI_API_KEY)
+                gemini_model = genai.GenerativeModel(MODEL_NAME)
+            except Exception as e:
+                st.error(f"Error configuring Google AI or creating model: {e}")
+                st.stop()
+        st.markdown('<div class="section-title">Phân Tích AI với Google Gemini</div>', unsafe_allow_html=True)
+        
+        # Hiển thị tóm tắt dữ liệu
+        st.subheader("Tóm tắt dữ liệu")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Xem trước dữ liệu**")
+            st.dataframe(df.head())
+        with col2:
+            st.markdown("**Thông tin dữ liệu**")
+            st.write(f"**Số dòng:** {df.shape[0]}")
+            st.write(f"**Số cột:** {df.shape[1]}")
+            st.write("**Các cột:** " + ", ".join(df.columns.tolist()))
+            # Chuẩn bị dữ liệu cho AI
+            buffer = StringIO()
+            filtered_df.info(buf=buffer)
+            info_str = buffer.getvalue()
+
+            # Lấy mẫu dữ liệu (giới hạn 100 dòng để tránh vượt giới hạn token)
+            max_rows_to_feed = 100
+            data_summary = []
+            for i, row in filtered_df.head(max_rows_to_feed).iterrows():
+                row_data = [f"{col}: {row[col]}" for col in filtered_df.columns]
+                formatted_row = f"Row {i+1}: {', '.join(row_data)}"
+                data_summary.append(formatted_row)
+            data_summary = "\n".join(data_summary)
+            if len(filtered_df) > max_rows_to_feed:
+                data_summary += f"\n... (Truncated to {max_rows_to_feed} rows out of {len(filtered_df)} total rows)"
+
+            data_to_feed = f"""
+            Dataset Info:
+            {info_str}
+            
+            Dataset Rows (Sample):
+            {data_summary}
+            """
+
+            # Giao diện nhập câu hỏi
+    
+            st.subheader("🤖 Hỏi Google Gemini về dữ liệu")
+            user_query = st.text_area(
+                "Đặt câu hỏi cho AI:",
+                height=100,
+                placeholder="Ví dụ: Các danh mục công việc phổ biến nhất là gì? Mức lương trung bình của ngành IT ở TP.HCM?"
+            )
+
+            if st.button("Tạo phản hồi", type="primary"):
+                if user_query:
+                    with st.spinner("Đang tạo phản hồi từ Google Gemini..."):
+                        # Hàm generate_feedback
+                        safety_settings = [
+                            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_MEDIUM_AND_ABOVE"},
+                        ]
+                        generation_config = genai.types.GenerationConfig(
+                            temperature=0.9,
+                            max_output_tokens=1000,
+                            top_p=0.9,
+                            top_k=40,
+                        )
+                        prompt = f"""
+                        Bạn là một chuyên gia phân tích dữ liệu và bạn có khả năng phân tích dữ liệu CSV.
+                        Dưới đây là một tóm tắt về dữ liệu mà bạn sẽ phân tích:
+                        {data_to_feed}
+                        
+                        Query của người dùng: {user_query}
+                        
+                        Bạn hãy phân tích dữ liệu và trả lời câu hỏi của người dùng một cách chi tiết và dễ hiểu.
+                        Hãy cung cấp các thông tin hữu ích và có thể bao gồm các gợi ý biểu đồ nếu cần thiết.
+                        """
+                        try:
+                            response = gemini_model.generate_content(
+                                prompt,
+                                generation_config=generation_config,
+                                safety_settings=safety_settings
+                                )
+                            st.subheader("Phản hồi từ Google Gemini")
+                            st.markdown(response.text)
+                        except Exception as e:
+                            st.error(f"Lỗi khi tạo phản hồi từ AI: {e}")
+                else:
+                    st.warning("Vui lòng nhập câu hỏi hoặc yêu cầu.")
+
+            with st.expander("💡 Nhận xét về Phân Tích AI với Google Gemini"):
+                st.markdown("""
+                - **Phân tích AI:** Sử dụng mô hình Google Gemini để trả lời các câu hỏi tùy chỉnh về dữ liệu tuyển dụng, cung cấp thông tin chi tiết và gợi ý phân tích.
+                - **Nhận xét:** Tính năng này cho phép người dùng khám phá dữ liệu theo cách linh hoạt, ví dụ: tìm hiểu xu hướng lương, kỹ năng phổ biến, hoặc so sánh giữa các địa điểm.
+                - **Hạn chế:** Độ chính xác phụ thuộc vào chất lượng dữ liệu và cách người dùng đặt câu hỏi. Nên sử dụng câu hỏi cụ thể để có kết quả tốt nhất.
+                """)
+                
+        
 
 # --- Trang 4: Nhận Xét Chung ---
 elif page == "4. Nhận Xét Chung":

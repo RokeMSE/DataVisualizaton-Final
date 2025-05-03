@@ -265,6 +265,22 @@ if uploaded_file is not None:
 if st.session_state.df_jobs is not None:
     df_jobs = st.session_state.df_jobs
 
+    
+    # --- Điều hướng trang giả lập ---
+    st.sidebar.header("Điều Hướng")
+    page_options = [
+        "🏠 Trang Chủ & Tổng Quan",
+        "📊 Phân Tích Thị Trường",
+        "💰 Phân Tích Lương & Kinh Nghiệm",
+        "🛠️ Phân Tích Kỹ Năng",
+        "🤖 Dự Đoán Lương (AI)"
+    ]
+    selected_page = st.sidebar.radio(
+        "Chọn trang:",
+        page_options,
+        key='page_navigation'
+    )
+    
     # --- Bộ lọc chung ---
     st.sidebar.header("Bộ lọc dữ liệu")
     # Không cần lấy filters từ state nữa vì default sẽ ghi đè lên
@@ -351,20 +367,6 @@ if st.session_state.df_jobs is not None:
     # Lưu df đã lọc vào state để các "trang" dùng chung
     st.session_state.df_filtered = df_filtered
 
-    # --- Điều hướng trang giả lập ---
-    st.sidebar.header("Điều Hướng")
-    page_options = [
-        "🏠 Trang Chủ & Tổng Quan",
-        "📊 Phân Tích Thị Trường",
-        "💰 Phân Tích Lương & Kinh Nghiệm",
-        "🛠️ Phân Tích Kỹ Năng",
-        "🤖 Dự Đoán Lương (AI)"
-    ]
-    selected_page = st.sidebar.radio(
-        "Chọn trang:",
-        page_options,
-        key='page_navigation'
-    )
 
     # ==============================================================================
     # --- 5. NỘI DUNG CHÍNH (Hiển thị dựa trên selected_page) ---
@@ -386,19 +388,27 @@ if st.session_state.df_jobs is not None:
         if st.session_state.original_filename:
              st.markdown(f"Dữ liệu đang phân tích từ file: `{st.session_state.original_filename}`")
 
-        # Thêm phần kiểm tra dữ liệu thiếu vào trang chủ
+        # --- <<< DI CHUYỂN PHẦN KIỂM TRA DỮ LIỆU THIẾU LÊN ĐÂY >>> ---
         st.subheader("Kiểm tra dữ liệu thiếu (Tổng thể)")
         with st.expander("Xem chi tiết tỷ lệ thiếu của các cột"):
-            if st.session_state.df_jobs is not None:
+            # Kiểm tra df_jobs thay vì df_filtered để xem tổng thể file gốc
+            if 'df_jobs' in st.session_state and st.session_state.df_jobs is not None:
                 missing_data = st.session_state.df_jobs.isnull().sum()
-                missing_percent = (missing_data / len(st.session_state.df_jobs)) * 100
-                missing_df = pd.DataFrame({'Số lượng thiếu': missing_data, 'Tỷ lệ thiếu (%)': missing_percent})
-                st.dataframe(missing_df[missing_df['Số lượng thiếu'] > 0].sort_values('Tỷ lệ thiếu (%)', ascending=False))
-                st.caption("Tỷ lệ thiếu cao ở các cột quan trọng (lương, kinh nghiệm, địa điểm, ngành) sẽ ảnh hưởng đến chất lượng phân tích và khả năng huấn luyện mô hình AI.")
+                if missing_data.sum() == 0: # Nếu không có cột nào thiếu
+                    st.info("Chúc mừng! Dữ liệu gốc không có giá trị thiếu.")
+                else:
+                    missing_percent = (missing_data / len(st.session_state.df_jobs)) * 100
+                    missing_df = pd.DataFrame({'Số lượng thiếu': missing_data, 'Tỷ lệ thiếu (%)': missing_percent})
+                    # Chỉ hiển thị các cột có dữ liệu thiếu
+                    st.dataframe(missing_df[missing_df['Số lượng thiếu'] > 0].sort_values('Tỷ lệ thiếu (%)', ascending=False))
+                    st.caption("Tỷ lệ thiếu cao ở các cột quan trọng (lương, kinh nghiệm, địa điểm, ngành) sẽ ảnh hưởng đến chất lượng phân tích và khả năng huấn luyện mô hình AI.")
             else:
-                st.info("Chưa có dữ liệu để kiểm tra.")
+                st.info("Chưa có dữ liệu gốc để kiểm tra (Vui lòng tải file lên).")
+        st.markdown("---") # Thêm đường kẻ phân cách
+        # --- <<< KẾT THÚC PHẦN DI CHUYỂN >>> ---
 
-        # Lấy df_filtered từ state
+
+        # Lấy df_filtered từ state để hiển thị phần còn lại
         df_display = st.session_state.df_filtered
 
         if df_display is not None and not df_display.empty:
@@ -425,7 +435,7 @@ if st.session_state.df_jobs is not None:
                data=csv_download,
                file_name='filtered_job_data.csv',
                mime='text/csv',
-               key='download_filtered_home'
+               key='download_filtered_home_v2' # Đổi key nếu cần
             )
         elif uploaded_file is not None: # df_filtered rỗng nhưng đã tải file
              st.warning("⚠️ Không tìm thấy dữ liệu phù hợp với bộ lọc hiện tại. Vui lòng thử điều chỉnh bộ lọc.")
@@ -445,7 +455,7 @@ if st.session_state.df_jobs is not None:
     # --- END PAGE: TRANG CHỦ & TỔNG QUAN ---
     # --------------------------------------------------------------------------
 
-
+    # ... (Các elif cho các trang khác giữ nguyên) ...
     # --------------------------------------------------------------------------
     # --- PAGE: PHÂN TÍCH THỊ TRƯỜNG ---
     # --------------------------------------------------------------------------

@@ -56,8 +56,7 @@ def load_data(file_path):
 
 def generate_feedback(data, user_query):
     """Generates feedback using the Google Generative AI model."""
-    # Corrected indentation
-    # Safety settings as defined by the user
+    # For wholesome content only
     safety_settings = [
         {
             "category": "HARM_CATEGORY_HARASSMENT",
@@ -77,22 +76,24 @@ def generate_feedback(data, user_query):
         },
     ]
 
-    # Generation config as defined by the user
+    # Generation config
     generation_config = genai.types.GenerationConfig(
-        temperature=0.9,
-        max_output_tokens=1000,
+        temperature=0.9, # Randomize the output
+        max_output_tokens=1000, 
         top_p=0.9,
         top_k=40,
     )
 
     # Construct the prompt (same as before)
     prompt = f"""
-    You are an AI assistant that provides feedback on datasets. Here is the dataset information and user query:
+    Bạn là một chuyên gia phân tích dữ liệu và bạn có khả năng phân tích dữ liệu CSV.
+    Dưới đây là một tóm tắt về dữ liệu mà bạn sẽ phân tích:
     {data}
     
-    User Query: {user_query}
+    Query của người dùng: {user_query}
     
-    Please provide a detailed response to the user's query, including any relevant insights or analysis.
+    Bạn hãy phân tích dữ liệu và trả lời câu hỏi của người dùng một cách chi tiết và dễ hiểu.
+    Hãy cung cấp các thông tin hữu ích và có thể bao gồm các biểu đồ hoặc hình ảnh nếu cần thiết.
     """
 
     try:
@@ -110,8 +111,8 @@ def generate_feedback(data, user_query):
 
 # --- Streamlit App Layout ---
 st.set_page_config(layout="wide") # Use wide layout
-st.title("📊 CSV Data Feedback with Google Generative AI")
-st.write(f"Analyzing data from: `{CSV_FILE_PATH}`")
+st.title("📊 Phân tích thị trường công việc Việt Nam cùng Google AI!")
+st.write(f"Data được lấy từ: `{CSV_FILE_PATH}`")
 
 # --- Load Data ---
 df = load_data(CSV_FILE_PATH)
@@ -179,31 +180,16 @@ if df is not None:
     st.divider()
 
     # --- User Input and AI Feedback ---
-    st.subheader("🤖 Get AI Feedback on the Data")
-    user_query = st.text_area("Enter your question or request about the data:", height=100, placeholder="e.g., What are the most common job levels? Summarize the types of companies.")
+    st.subheader("🤖 Hỏi AI thêm về các job!")
+    user_query = st.text_area("Đặt câu hỏi cho AI trả lời:", height=100, placeholder="Vd: Các job phổ biến nhất là gì? Tóm tắt các loại công ty.")
 
     if st.button("Generate Feedback", type="primary"):
         if user_query:
             with st.spinner("Generating feedback using Google AI..."):
                 feedback = generate_feedback(data_to_feed, user_query)
-                st.subheader("AI Response:")
+                st.subheader("AI trả lời là:")
                 st.markdown(feedback) # Use markdown to render potential formatting from the AI
         else:
             st.warning("Please enter a question or request.")
 else:
     st.error("Failed to load data. Please check the file path and ensure the CSV is valid.")
-
-    st.divider()
-
-    # --- User Input and AI Feedback ---
-    st.subheader("🤖 Get AI Feedback on the Data")
-    user_query = st.text_area("Enter your question or request about the data:", height=100, placeholder="e.g., What are the most common job levels? Summarize the types of companies.")
-
-    if st.button("Generate Feedback", type="primary"):
-        if user_query:
-            with st.spinner("Generating feedback using Google AI..."):
-                feedback = generate_feedback(data_to_feed, user_query)
-                st.subheader("AI Response:")
-                st.markdown(feedback) # Use markdown to render potential formatting from the AI
-        else:
-            st.warning("Please enter a question or request.")

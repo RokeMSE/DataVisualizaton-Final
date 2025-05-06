@@ -281,7 +281,7 @@ if st.session_state.df_jobs is not None:
         "📊 Phân Tích Thị Trường",
         "💰 Phân Tích Lương & Kinh Nghiệm",
         "🛠️ Phân Tích Kỹ Năng",
-        "🤖 Dự Đoán Lương (AI)"
+        "🤖 Dự Đoán Lương (AI)",
         "📈 Thống Kê Mô Tả"
     ]
     selected_page = st.sidebar.radio(
@@ -577,17 +577,16 @@ if st.session_state.df_jobs is not None:
     # --------------------------------------------------------------------------
     elif selected_page == page_options[2]:
         st.title("💰 Phân Tích Lương & Kinh Nghiệm")
-        df_display = st.session_state.df_filtered # Lấy dữ liệu đã lọc
+        df_display = st.session_state.df_filtered
         if df_display is None or df_display.empty:
-             st.warning("⚠️ Không có dữ liệu phù hợp với bộ lọc để hiển thị phân tích này.")
+            st.warning("⚠️ Không có dữ liệu phù hợp với bộ lọc để hiển thị phân tích này.")
         else:
             salary_col = 'min_salary_mil_vnd'
             exp_col = 'min_experience_years'
-
             if salary_col not in df_display.columns or df_display[salary_col].isnull().all():
-                 st.error(f"Thiếu dữ liệu cột lương '{salary_col}' để phân tích.")
+                st.error(f"Thiếu dữ liệu cột lương '{salary_col}' để phân tích.")
             elif exp_col not in df_display.columns or df_display[exp_col].isnull().all():
-                 st.error(f"Thiếu dữ liệu cột kinh nghiệm '{exp_col}' để phân tích.")
+                st.error(f"Thiếu dữ liệu cột kinh nghiệm '{exp_col}' để phân tích.")
             else:
                 st.subheader("Phân Bố Mức Lương Tối Thiểu")
                 fig_hist_min_sal = px.histogram(df_display.dropna(subset=[salary_col]), x=salary_col, nbins=50, title='Phân Bố Mức Lương Tối Thiểu (Triệu VND)', labels={salary_col: 'Mức Lương Tối Thiểu (Triệu VND)'}, marginal="box")
@@ -601,14 +600,14 @@ if st.session_state.df_jobs is not None:
                 with col_scatter:
                     st.markdown("##### Scatter Plot Lương vs. Kinh Nghiệm")
                     if not df_analysis.empty:
-                        color_options_scatter = {'primary_category':'Ngành Nghề', 'primary_location':'Địa Điểm', None:'Không tô màu'}
+                        color_options_scatter = {'primary_category': 'Ngành Nghề', 'primary_location': 'Địa Điểm', None: 'Không tô màu'}
                         selected_color_scatter = st.selectbox("Tô màu điểm theo:", list(color_options_scatter.keys()), format_func=lambda x: color_options_scatter[x], key='scatter_color_exp_salary')
-
                         fig_scatter = px.scatter(df_analysis, x=exp_col, y=salary_col, title='Lương Tối Thiểu theo Kinh Nghiệm', labels={exp_col: 'Kinh Nghiệm Tối Thiểu (Năm)', salary_col: 'Lương Tối Thiểu (Tr VND)'}, color=selected_color_scatter, hover_name='job_title', opacity=0.6, trendline="ols", trendline_scope="overall", trendline_color_override="darkblue", height=500)
                         fig_scatter.update_layout(legend_title_text=color_options_scatter.get(selected_color_scatter, ''))
                         st.plotly_chart(fig_scatter, use_container_width=True)
                         st.caption("Mỗi điểm là một tin tuyển dụng. Đường màu xanh đậm là đường xu hướng tổng thể.")
-                    else: st.info("Không đủ dữ liệu cho scatter plot.")
+                    else:
+                        st.info("Không đủ dữ liệu cho scatter plot.")
 
                 with col_box:
                     st.markdown("##### Box Plot Lương theo Nhóm Kinh Nghiệm")
@@ -621,10 +620,11 @@ if st.session_state.df_jobs is not None:
                             bins = [-1, 0, 1, 2, 3, 4, 5, 10, max_exp_val_box]
                             labels = ['0 năm', '1 năm', '2 năm', '3 năm', '4 năm', '5 năm', '6-10 năm', '10+ năm']
                             if max_exp_val_box <= 10:
-                                bins = bins[:-1]; labels = labels[:-1]
+                                bins = bins[:-1]
+                                labels = labels[:-1]
                                 if max_exp_val_box <= 5:
-                                     bins = bins[:-1]; labels = labels[:-1]
-
+                                    bins = bins[:-1]
+                                    labels = labels[:-1]
                         if len(bins) > 1:
                             try:
                                 df_analysis['experience_group'] = pd.cut(df_analysis[exp_col], bins=bins, labels=labels, right=True)
@@ -633,26 +633,53 @@ if st.session_state.df_jobs is not None:
                                     fig_box_exp = px.box(df_plot_box, x='experience_group', y=salary_col, title='Phân Bố Lương theo Nhóm Kinh Nghiệm', labels={'experience_group': 'Nhóm Kinh Nghiệm', salary_col: 'Lương Tối Thiểu (Tr VND)'}, points="outliers", color='experience_group', color_discrete_sequence=px.colors.qualitative.Bold, height=500)
                                     fig_box_exp.update_layout(showlegend=False)
                                     st.plotly_chart(fig_box_exp, use_container_width=True)
-                                else: st.info("Không có dữ liệu sau khi phân nhóm kinh nghiệm.")
+                                else:
+                                    st.info("Không có dữ liệu sau khi phân nhóm kinh nghiệm.")
                             except Exception as e:
-                                 st.warning(f"Lỗi khi phân nhóm kinh nghiệm: {e}. Hiển thị theo từng năm (<=10):")
-                                 df_plot_box_fb = df_analysis[df_analysis[exp_col] <= 10]
-                                 if not df_plot_box_fb.empty:
+                                st.warning(f"Lỗi khi phân nhóm kinh nghiệm: {e}. Hiển thị theo từng năm (<=10):")
+                                df_plot_box_fb = df_analysis[df_analysis[exp_col] <= 10]
+                                if not df_plot_box_fb.empty:
                                     fig_box_exp_fb = px.box(df_plot_box_fb, x=exp_col, y=salary_col, title='Phân Bố Lương theo Kinh Nghiệm (Từng năm <= 10)', labels={exp_col: 'Kinh Nghiệm (Năm)', salary_col: 'Lương Tối Thiểu (Tr VND)'}, points="outliers")
                                     fig_box_exp_fb.update_xaxes(type='category')
                                     st.plotly_chart(fig_box_exp_fb, use_container_width=True)
-                                 else: st.info("Không có dữ liệu kinh nghiệm <= 10 năm.")
+                                else:
+                                    st.info("Không có dữ liệu kinh nghiệm <= 10 năm.")
                         else:
                             st.info("Không đủ khoảng kinh nghiệm để phân nhóm.")
                     else:
                         st.info("Không đủ dữ liệu cho box plot lương theo kinh nghiệm.")
 
-                # --- Nhận xét ---
+                # --- Biểu Đồ Xu Hướng (Đã thêm vào đây) ---
+                st.subheader("Xu Hướng Lương Theo Kinh Nghiệm")
+                st.markdown('<div class="section-title">Biểu Đồ Xu Hướng</div>', unsafe_allow_html=True)
+                grouped = df_display.groupby("min_experience_years")[["min_salary_mil_vnd", "max_salary_mil_vnd"]].mean().reset_index()
+                if grouped.empty:
+                    st.warning("Không có dữ liệu hợp lệ để hiển thị biểu đồ xu hướng.")
+                else:
+                    fig, ax = plt.subplots(figsize=(12, 7))
+                    sns.lineplot(x="min_experience_years", y="min_salary_mil_vnd", data=grouped, label="Mức Lương Tối Thiểu", ax=ax, color=PALETTE[0])
+                    sns.lineplot(x="min_experience_years", y="max_salary_mil_vnd", data=grouped, label="Mức Lương Tối Đa", ax=ax, color=PALETTE[1])
+                    ax.set_title("Mức Lương Theo Kinh Nghiệm (Biểu Đồ Đường)", fontsize=14, pad=15)
+                    ax.set_xlabel("Số Năm Kinh Nghiệm Tối Thiểu", fontsize=12)
+                    ax.set_ylabel("Mức Lương (Triệu VND)", fontsize=12)
+                    ax.legend(title="Loại Lương")
+                    plt.grid(True, linestyle='--', alpha=0.7)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    pdf_buffer = save_fig_to_pdf(fig)
+                    st.download_button(
+                        label="📥 Lưu Biểu Đồ Dưới Dạng PDF",
+                        data=pdf_buffer,
+                        file_name="LineChart_MucLuong_KinhNghiem.pdf",
+                        mime="application/pdf"
+                    )
+
                 st.markdown("---")
                 st.subheader("📝 Nhận Xét")
                 st.markdown("""
                 * **Phân bố lương:** Biểu đồ histogram thường cho thấy lương tập trung ở mức thấp đến trung bình và có một số giá trị rất cao (lệch phải).
-                * **Lương & Kinh nghiệm:** Có xu hướng lương tăng theo kinh nghiệm, nhưng mức độ tăng và sự biến động khác nhau tùy ngành nghề và địa điểm (thể hiện qua màu sắc và độ phân tán trong scatter plot, chiều cao hộp trong box plot).
+                * **Lương & Kinh nghiệm:** Có xu hướng lương tăng theo kinh nghiệm, nhưng mức độ tăng và sự biến động khác nhau tùy ngành nghề và địa điểm.
+                * **Xu hướng lương:** Biểu đồ đường cho thấy mức lương trung bình (tối thiểu và tối đa) có xu hướng tăng theo số năm kinh nghiệm, với mức lương tối đa thường cao hơn đáng kể ở các mức kinh nghiệm cao.
                 """)
     # --- END PAGE: PHÂN TÍCH LƯƠNG & KINH NGHIỆM ---
     # --------------------------------------------------------------------------

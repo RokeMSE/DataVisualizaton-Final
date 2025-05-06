@@ -379,13 +379,6 @@ elif page == "2. Thống Kê Mô Tả":
                 mime="application/pdf"
             )
 
-        with st.expander("💡 Nhận Xét Về Thống Kê Mô Tả"):
-            st.markdown("""
-            - **Mức lương (min_salary_mil_vnd, max_salary_mil_vnd):** Mức lương tối thiểu và tối đa trung bình, phạm vi lương, và phân phối (triệu VND).
-            - **Kinh nghiệm (min_experience_years, max_experience_years):** Số năm kinh nghiệm yêu cầu trung bình và phân phối.
-            - **Địa điểm (primary_location):** Các địa điểm phổ biến nhất (ví dụ: TP.HCM, Hà Nội).
-            - **Danh mục (primary_category):** Các danh mục công việc phổ biến (ví dụ: IT, Kinh doanh).
-            """)
 
     with tab3:
         st.markdown('<div class="section-title">Phân Phối Biến Phân Loại</div>', unsafe_allow_html=True)
@@ -536,7 +529,7 @@ elif page == "3. Phân Tích Chuyên Sâu":
             x="min_experience_years",
             y="job_count",
             data=job_counts,
-            palette="coolwarm",
+            palette="viridis",
             ax=ax
         )
         ax.set_ylabel("Số Lượng Bài Đăng", fontsize=12)
@@ -589,7 +582,7 @@ elif page == "3. Phân Tích Chuyên Sâu":
                 x="primary_category",
                 y="min_salary_mil_vnd",
                 data=grouped_min_salary,
-                palette="Blues",
+                palette="viridis",
                 ax=ax,
                 order=selected_categories if selected_categories else grouped_min_salary['primary_category'].tolist()
             )
@@ -621,7 +614,7 @@ elif page == "3. Phân Tích Chuyên Sâu":
                 x="primary_category",
                 y="max_salary_mil_vnd",
                 data=grouped_max_salary,
-                palette="Greens",
+                palette="viridis",
                 ax=ax,
                 order=selected_categories if selected_categories else grouped_max_salary['primary_category'].tolist()
             )
@@ -699,16 +692,6 @@ elif page == "3. Phân Tích Chuyên Sâu":
                 mime="application/pdf"
             )
 
-        with st.expander("💡 Xem Nhận Xét Chi Tiết"):
-            st.markdown("""
-            - **Biểu đồ Boxplot:**
-            - Thể hiện phân phối mức lương tối thiểu và tối đa theo số năm kinh nghiệm (0-5 năm). 
-            - Đường giữa là trung vị, hộp là khoảng tứ phân vị (IQR), các điểm là outliers.
-            - **Nhận xét:**
-            - Kinh nghiệm từ 0-1 năm có mức lương thấp nhất, với ít biến động.
-            - Từ 2-5 năm, mức lương tăng đáng kể, nhưng cũng có nhiều điểm ngoại lai (các vị trí lương cao bất thường).
-            - Mối quan hệ giữa kinh nghiệm và lương không hoàn toàn tuyến tính, do các yếu tố khác như danh mục công việc hoặc địa điểm.
-            """)
 
     with tab5:
         st.markdown('<div class="section-title">Phân Bố Địa Điểm Tuyển Dụng</div>', unsafe_allow_html=True)
@@ -730,7 +713,6 @@ elif page == "3. Phân Tích Chuyên Sâu":
         if filtered_df.empty:
             st.warning("Không có dữ liệu hợp lệ sau khi lọc. Vui lòng chọn lại địa điểm.")
         else:
-            st.markdown(f"Đang hiển thị dữ liệu cho: **{', '.join(selected_locations)}**")
             st.markdown('<div class="chart-title">Biểu Đồ Phân Bố</div>', unsafe_allow_html=True)
 
             fig, ax = plt.subplots(figsize=(20, 16))
@@ -748,9 +730,10 @@ elif page == "3. Phân Tích Chuyên Sâu":
                     .reset_index(name='count')
                 )
                 counts = counts[counts['primary_location'].isin(selected_locations)]
-                counts['primary_location'] = pd.Categorical(counts['primary_location'], categories=selected_locations, ordered=True)
-                counts = counts.sort_values('primary_location')
-                sns.barplot(x='count', y='primary_location', data=counts, palette="viridis", ax=ax)
+                # Sắp xếp theo số lượng bài đăng từ cao đến thấp
+                counts = counts.sort_values('count', ascending=False)
+                # Sử dụng order để đảm bảo thứ tự đúng
+                sns.barplot(x='count', y='primary_location', data=counts, palette="viridis", ax=ax, order=counts['primary_location'])
                 ax.set_xlabel('Số Lượng Bài Đăng', fontsize=12)
                 ax.set_ylabel('Địa Điểm', fontsize=12)
             else:
@@ -764,10 +747,10 @@ elif page == "3. Phân Tích Chuyên Sâu":
                     x_label = "Mức Lương Tối Đa Trung Bình (triệu VND)"
 
                 grouped = grouped[grouped['primary_location'].isin(selected_locations)]
-                grouped['primary_location'] = pd.Categorical(grouped['primary_location'], categories=selected_locations, ordered=True)
-                grouped = grouped.sort_values('primary_location')
-
-                sns.barplot(x=x_col, y='primary_location', data=grouped, palette="viridis", ax=ax)
+                # Sắp xếp theo mức lương từ cao đến thấp
+                grouped = grouped.sort_values(x_col, ascending=False)
+                # Sử dụng order để đảm bảo thứ tự đúng
+                sns.barplot(x=x_col, y='primary_location', data=grouped, palette="viridis", ax=ax, order=grouped['primary_location'])
                 ax.set_xlabel(x_label, fontsize=12)
                 ax.set_ylabel('Địa Điểm', fontsize=12)
 
@@ -786,20 +769,7 @@ elif page == "3. Phân Tích Chuyên Sâu":
     with tab6:
         st.markdown('<div class="section-title">Biểu Đồ Tương Quan (Heatmap)</div>', unsafe_allow_html=True)
         
-        st.markdown('<div class="filter-box">', unsafe_allow_html=True)
-        categories = df['primary_category'].unique().tolist()
-        selected_categories = st.multiselect(
-            "Chọn các danh mục công việc (bỏ trống để chọn tất cả):",
-            options=categories,
-            default=categories,
-            key="filter_categories_corr"
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        filtered_df = df.copy()
-        if selected_categories:
-            filtered_df = filtered_df[filtered_df['primary_category'].isin(selected_categories)]
-
+    
         st.markdown('<div class="chart-title">Biểu Đồ Nhiệt</div>', unsafe_allow_html=True)
         
         corr_cols = ['min_salary_mil_vnd', 'max_salary_mil_vnd', 'min_experience_years', 'max_experience_years']
@@ -833,16 +803,6 @@ elif page == "3. Phân Tích Chuyên Sâu":
                 mime="application/pdf"
             )
 
-        with st.expander("💡 Xem Nhận Xét Chi Tiết"):
-            st.markdown("""
-            - **Biểu đồ Nhiệt Tương Quan:**
-              - Thể hiện mức độ tương quan tuyến tính giữa các biến số: mức lương tối thiểu, tối đa, kinh nghiệm tối thiểu, tối đa.
-              - Giá trị gần 1 hoặc -1 cho thấy tương quan mạnh; gần 0 cho thấy ít hoặc không tương quan.
-            - **Nhận xét:**
-              - **Mức lương tối thiểu và tối đa:** Thường có tương quan cao, vì các bài đăng có xu hướng xác định một khoảng lương rõ ràng.
-              - **Kinh nghiệm và mức lương:** Có thể có tương quan dương nhẹ, nhưng không mạnh, do các yếu tố khác như danh mục công việc ảnh hưởng đến lương.
-              - **Kinh nghiệm tối thiểu và tối đa:** Tương quan cao, vì nhiều bài đăng yêu cầu một khoảng kinh nghiệm cụ thể.
-            """)
 
     with tab7:
         st.markdown('<div class="section-title">Phân Tích Song Biến</div>', unsafe_allow_html=True)
@@ -931,16 +891,6 @@ elif page == "3. Phân Tích Chuyên Sâu":
                 mime="application/pdf"
             )
 
-        with st.expander("💡 Xem Nhận Xét Chi Tiết"):
-            st.markdown("""
-            - **Biểu Đồ Đường:**
-              - Thể hiện xu hướng mức lương tối thiểu và tối đa theo số năm kinh nghiệm.
-              - Đường biểu diễn giúp dễ dàng nhận thấy sự thay đổi mức lương theo kinh nghiệm.
-            - **Nhận xét:**
-              - Mức lương tối thiểu và tối đa thường tăng theo số năm kinh nghiệm.
-              - Sự khác biệt giữa mức lương tối thiểu và tối đa có thể phản ánh sự đa dạng trong các vị trí công việc.
-            """)
-
     with tab9:
         st.markdown('<div class="section-title">Phân Tích AI</div>', unsafe_allow_html=True)
         
@@ -1026,17 +976,6 @@ elif page == "3. Phân Tích Chuyên Sâu":
                     mime="application/pdf"
                 )
 
-        with st.expander("💡 Nhận Xét Về Phân Tích AI"):
-            st.markdown("""
-            - **Dự Đoán Mức Lương:**
-              - Mô hình hồi quy tuyến tính dự đoán mức lương tối thiểu dựa trên kinh nghiệm, danh mục công việc, và địa điểm.
-              - Biểu đồ phân tán so sánh giá trị thực tế và dự đoán, với đường lý tưởng (y=x) để đánh giá độ chính xác.
-              - Nhận xét: Mô hình có thể dự đoán gần đúng mức lương, nhưng độ chính xác phụ thuộc vào chất lượng dữ liệu và các yếu tố khác (như mô tả công việc).
-            - **Phân Tích Kỹ Năng:**
-              - Trích xuất các kỹ năng phổ biến từ yêu cầu công việc, hiển thị tần suất xuất hiện.
-              - Nhận xét: Các kỹ năng như Python, SQL, hoặc quản lý thường xuất hiện nhiều trong các danh mục công nghệ và kinh doanh, phản ánh nhu cầu thị trường.
-            """)
-            
     with tab10:
         if not GEMINI_API_KEY:
             st.error("🚨 GEMINI_API_KEY environment variable not found. Please set it in your .env file.")
@@ -1132,13 +1071,6 @@ elif page == "3. Phân Tích Chuyên Sâu":
                             st.error(f"Lỗi khi tạo phản hồi từ AI: {e}")
                 else:
                     st.warning("Vui lòng nhập câu hỏi hoặc yêu cầu.")
-
-            with st.expander("💡 Nhận xét về Phân Tích AI với Google Gemini"):
-                st.markdown("""
-                - **Phân tích AI:** Sử dụng mô hình Google Gemini để trả lời các câu hỏi tùy chỉnh về dữ liệu tuyển dụng, cung cấp thông tin chi tiết và gợi ý phân tích.
-                - **Nhận xét:** Tính năng này cho phép người dùng khám phá dữ liệu theo cách linh hoạt, ví dụ: tìm hiểu xu hướng lương, kỹ năng phổ biến, hoặc so sánh giữa các địa điểm.
-                - **Hạn chế:** Độ chính xác phụ thuộc vào chất lượng dữ liệu và cách người dùng đặt câu hỏi. Nên sử dụng câu hỏi cụ thể để có kết quả tốt nhất.
-                """)
                 
         
 

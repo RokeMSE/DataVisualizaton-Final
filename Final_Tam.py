@@ -11,6 +11,7 @@ from io import BytesIO # Để dùng cho nút download
 # Thư viện WordCloud (cần cài đặt: pip install wordcloud)
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
+import seaborn as sns
 # Thư viện AI/ML
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LinearRegression
@@ -31,6 +32,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+sns.set_palette("colorblind")
+PALETTE = ["#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#CC6677", "#882255", "#AA4499"]
+def save_fig_to_pdf(fig):
+    buffer = BytesIO()
+    fig.savefig(buffer, format='pdf', bbox_inches='tight')
+    buffer.seek(0)
+    return buffer
 # (Tùy chọn) Thêm CSS tùy chỉnh tại đây nếu muốn
 # st.markdown("""<style>...</style>""", unsafe_allow_html=True)
 
@@ -274,6 +282,7 @@ if st.session_state.df_jobs is not None:
         "💰 Phân Tích Lương & Kinh Nghiệm",
         "🛠️ Phân Tích Kỹ Năng",
         "🤖 Dự Đoán Lương (AI)"
+        "📈 Thống Kê Mô Tả"
     ]
     selected_page = st.sidebar.radio(
         "Chọn trang:",
@@ -823,6 +832,109 @@ if st.session_state.df_jobs is not None:
                         """)
                     elif st.session_state.model_pipeline is None and num_valid_records >= min_records_threshold:
                          st.info("Nhấn nút 'Huấn luyện/Cập nhật mô hình' để bắt đầu.")
+                         
+    elif selected_page == page_options[5]:
+        st.header("📈 Thống Kê Mô Tả")
+        df = st.session_state.df_filtered
+        if df is None or df.empty:
+            st.warning("⚠️ Không có dữ liệu phù hợp với bộ lọc để hiển thị phân tích này.")
+        else:
+            st.markdown("""
+                <style>
+                .section-title {
+                    font-size: 24px;
+                    font-weight: 500;
+                    margin-bottom: 15px;
+                    color: #333333;
+                }
+                .chart-title {
+                    font-size: 18px;
+                    font-weight: bold;
+                    color: #FF851B;
+                    margin-bottom: 10px;
+                }
+                .debug-expander {
+                    background-color: #f9f9f9;
+                    padding: 10px;
+                    border-radius: 5px;
+                }
+                </style>
+            """, unsafe_allow_html=True)
+            tab1, tab2, tab3 = st.tabs(["📊 Thông Tin Dữ Liệu", "📈 Phân Phối Biến Số", "📉 Phân Phối Biến Phân Loại"])
+            with tab1:
+                st.markdown('<div class="section-title">Thông Tin Dữ Liệu</div>', unsafe_allow_html=True)
+                st.dataframe(df.describe(include='all').style.set_properties(**{
+                    'background-color': '#ffffff',
+                    'border': '1px solid #e0e0e0',
+                    'padding': '5px',
+                    'text-align': 'left'
+                }), height=300)
+            with tab2:
+                st.markdown('<div class="section-title">Phân Phối Biến Số</div>', unsafe_allow_html=True)
+                numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
+                num_select = st.selectbox("Chọn một biến số để xem phân phối:", numeric_cols)
+                if num_select:
+                    chart_type = st.radio("Chọn loại biểu đồ:", ["Histogram (với KDE)", "Boxplot", "KDE Plot"])
+                    st.markdown('<div class="chart-title">Biểu Đồ Phân Phối</div>', unsafe_allow_html=True)
+                    fig, ax = plt.subplots(figsize=(14, 7))
+                    if chart_type == "Histogram (với KDE)":
+                        sns.histplot(df[num_select].dropna(), kde=True, color=PALETTE[0], ax=ax)
+                        ax.set_title(f"Phân bố của {num_select} (Histogram với KDE)", fontsize=14, pad=15)
+                    elif chart_type == "Boxplot":
+                        sns.boxplot(y=df[num_select].dropna(), color=PALETTE[1], ax=ax)
+                        ax.set_title(f"Phân bố của {num_select} (Boxplot)", fontsize=14, pad=15)
+                    elif chart_type == "KDE Plot":
+                        sns.kdeplot(df[num_select].dropna(), color=PALETTE[2], fill=True, ax=ax)
+                        ax.set_title(f"Phân bố của {num_select} (KDE Plot)", fontsize=14, pad=15)
+                    ax.set_xlabel(num_select, fontsize=12)
+                    ax.set_ylabel('Số lượng' if chart_type != "Boxplot" else '', fontsize=12)
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    pdf_buffer = save_fig_to_pdf(fig)
+                    st.download_button(
+                        label="📥 Lưu Biểu Đồ Dưới Dạng PDF",
+                        data=pdf_buffer,
+                        file_name=f"PhanBo_{num_select}_{chart_type}.pdf",
+                        mime="application/pdf"
+                    )
+            with tab3:
+                st.markdown('<div class="section-title">Phân Phối Biến Phân Loại</div>', unsafe_allow_html=True)
+                st.markdown('<div class="filter-box">', unsafe_allow_html=True)
+                unique_locations = df['primary_location'].dropna().unique().tolist()
+                selected_locations = st.multiselect(
+                    "📍 Lọc theo địa điểm:",
+                    options=unique_locations,
+                    default=unique_locations,
+                    key="filter_locations_categorical"
+                )
+                st.markdown('</div>', unsafe_allow_html=True)
+                filtered_df = df.copy()
+                if selected_locations:
+                    filtered_df = filtered_df[filtered_df['primary_location'].isin(selected_locations)]
+                if filtered_df.empty:
+                    st.warning("Không có dữ liệu hợp lệ sau khi lọc. Vui lòng chọn lại địa điểm.")
+                else:
+                    cat_cols = ['order', 'position', 'primary_category']
+                    cat_select = st.selectbox("Chọn một biến phân loại để xem phân phối:", cat_cols)
+                    if cat_select:
+                        grouped = filtered_df.groupby('primary_location')[cat_select].value_counts().unstack(fill_value=0)
+                        grouped = grouped.reindex(selected_locations)
+                        grouped = grouped.sort_index(ascending=False)
+                        fig, ax = plt.subplots(figsize=(20, 16))
+                        grouped.plot(kind='bar', stacked=True, ax=ax, colormap='tab20')
+                        ax.set_title(f"Phân Phối '{cat_select}' Theo Địa Điểm Đã Chọn", fontsize=16, pad=10)
+                        ax.set_xlabel("Địa điểm", fontsize=14)
+                        ax.set_ylabel("Số lượng", fontsize=14)
+                        plt.xticks(rotation=90, ha='right')
+                        plt.tight_layout()
+                        st.pyplot(fig)
+                        pdf_buffer = save_fig_to_pdf(fig)
+                        st.download_button(
+                            label="📥 Lưu Biểu Đồ Dưới Dạng PDF",
+                            data=pdf_buffer,
+                            file_name=f"PhanBo_{cat_select}_TheoDiaDiem.pdf",
+                            mime="application/pdf"
+                        )
 
     # --- END PAGE: DỰ ĐOÁN LƯƠNG (AI) ---
     # --------------------------------------------------------------------------

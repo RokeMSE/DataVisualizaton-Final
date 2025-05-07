@@ -347,7 +347,7 @@ if st.session_state.df_jobs is not None:
         "📊 Phân Tích Thị Trường",
         "💰 Phân Tích Lương & Kinh Nghiệm",
         "🛠️ Phân Tích Kỹ Năng",
-        "🤖 Dự Đoán Lương (AI)",
+        "🤖 Dự Đoán Lương (ML)",
         "📈 Thống Kê Mô Tả",
         "💡 Cố vấn AI (Gemini)"
     ]
@@ -816,7 +816,7 @@ if st.session_state.df_jobs is not None:
     # --- PAGE: DỰ ĐOÁN LƯƠNG (AI) ---
     # --------------------------------------------------------------------------
     elif selected_page == page_options[4]:
-        st.title("🤖 Dự Đoán Lương Tối Thiểu (AI)")
+        st.title("🤖 Dự Đoán Lương Tối Thiểu (ML)")
         st.markdown("Sử dụng mô hình Machine Learning (Random Forest) để dự đoán mức lương tối thiểu dựa trên kinh nghiệm, ngành nghề và địa điểm.")
 
         df_display = st.session_state.df_filtered # Lấy dữ liệu đã lọc

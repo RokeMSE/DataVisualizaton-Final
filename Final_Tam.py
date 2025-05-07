@@ -7,23 +7,48 @@ import numpy as np
 import re
 from collections import Counter
 import csv
-from io import BytesIO # Để dùng cho nút download
+from io import BytesIO, StringIO # Để dùng cho nút download
+import statsmodels.api as sm # Thư viện thống kê
 # Thư viện WordCloud (cần cài đặt: pip install wordcloud)
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import seaborn as sns
 # Thư viện AI/ML
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor # Thử mô hình khác
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 import joblib # Lưu/tải mô hình (tùy chọn)
 
+# Gemini API Import
+import os
+from dotenv import load_dotenv
+import google.generativeai as genai
+
+# --- AI Config(from Final.py) ---
+load_dotenv() # Phải có .env chứa API key
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+AI_MODEL_NAME = "gemini-2.0-flash" 
+
+genai_model = None
+ai_configured_successfully = False
+
+if not GEMINI_API_KEY:
+    st.error("🚨 Không tìm thấy biến môi trường GEMINI_API_KEY. Vui lòng thiết lập trong file .env.")
+    pass 
+else:
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        genai_model = genai.GenerativeModel(AI_MODEL_NAME)
+        ai_configured_successfully = True
+    except Exception as e:
+        ai_configured_successfully = False
+# --- End AI Config ---
+
 # ==============================================================================
-# --- 1. CẤU HÌNH TRANG VÀ CSS (Nếu có) ---
+# --- 1. CẤU HÌNH TRANG VÀ CSS ---
 # ==============================================================================
 st.set_page_config(
     page_title="Dashboard Phân Tích Tuyển Dụng VN",
@@ -227,6 +252,48 @@ def train_salary_model(df_train):
 
     return results_df, rmse, mae, r2, oob_score
 
+# --- Hàm feed data cho Gemini ---
+def get_dataset_info(df):
+    if df is None:
+        return "Không có dữ liệu DataFrame để hiển thị thông tin."
+    
+    buffer = StringIO()
+    df.info(buf=buffer)
+    info_str = buffer.getvalue()
+    
+    info_summary = (
+        f"Tổng quan Dataset:\n"
+        f"--------------------\n"
+        f"Số dòng: {df.shape[0]}\n"
+        f"Số cột: {df.shape[1]}\n\n"
+        f"Thông tin chi tiết các cột (dtypes, non-null counts):\n"
+        f"{info_str}\n"
+        f"Một vài thống kê mô tả cơ bản cho các cột số:\n"
+        f"{df.describe(include=np.number).to_string()}\n\n"
+        f"Một vài thống kê mô tả cơ bản cho các cột object/category:\n"
+        f"{df.describe(include=['object', 'category']).to_string()}"
+    )
+    return info_summary
+
+# --- Hàm nhả feedback từ Gemini ---
+def generate_feedback(data_context, query):
+    global genai_model
+    if not genai_model:
+        return "AI model chưa được cấu hình hoặc khởi tạo thành công."
+    try:
+        prompt = f"""
+        Dựa trên dữ liệu tuyển dụng được cung cấp sau đây:
+        <data_context>
+        {data_context}
+        </data_context>
+
+        Hãy trả lời câu hỏi sau một cách chi tiết và hữu ích (bằng ngôn ngữ của user' input): "{query}"
+        """
+        response = genai_model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Đã xảy ra lỗi khi giao tiếp với AI: {str(e)}"
+
 # --- Hàm chuyển đổi dataframe sang CSV cho nút download ---
 @st.cache_data
 def convert_df_to_csv(df):
@@ -272,7 +339,6 @@ if uploaded_file is not None:
 # Kiểm tra nếu có dữ liệu để hiển thị bộ lọc và nội dung
 if st.session_state.df_jobs is not None:
     df_jobs = st.session_state.df_jobs
-
     
     # --- Điều hướng trang giả lập ---
     st.sidebar.header("Điều Hướng")
@@ -282,7 +348,8 @@ if st.session_state.df_jobs is not None:
         "💰 Phân Tích Lương & Kinh Nghiệm",
         "🛠️ Phân Tích Kỹ Năng",
         "🤖 Dự Đoán Lương (AI)",
-        "📈 Thống Kê Mô Tả"
+        "📈 Thống Kê Mô Tả",
+        "💡 Cố vấn AI (Gemini)"
     ]
     selected_page = st.sidebar.radio(
         "Chọn trang:",
@@ -719,7 +786,8 @@ if st.session_state.df_jobs is not None:
                             try:
                                 skill_frequencies = {skill: count for skill, count in skills_df.values}
                                 if skill_frequencies:
-                                    wordcloud = WordCloud(width=800, height=600, background_color='white', max_words=100, colormap='viridis', collocations=False, contour_width=1, contour_color='steelblue').generate_from_frequencies(skill_frequencies)
+                                    # Use mode="RGBA" and background_color=None for transparency
+                                    wordcloud = WordCloud(width=800, height=600, mode="RGBA", background_color=None, max_words=100, colormap='viridis', collocations=False, contour_width=1, contour_color='steelblue').generate_from_frequencies(skill_frequencies)
                                     fig_cloud, ax = plt.subplots(figsize=(10, 7))
                                     ax.imshow(wordcloud, interpolation='bilinear')
                                     ax.axis('off')
@@ -890,12 +958,7 @@ if st.session_state.df_jobs is not None:
             tab1, tab2, tab3 = st.tabs(["📊 Thông Tin Dữ Liệu", "📈 Phân Phối Biến Số", "📉 Phân Phối Biến Phân Loại"])
             with tab1:
                 st.markdown('<div class="section-title">Thông Tin Dữ Liệu</div>', unsafe_allow_html=True)
-                st.dataframe(df.describe(include='all').style.set_properties(**{
-                    'background-color': '#ffffff',
-                    'border': '1px solid #e0e0e0',
-                    'padding': '5px',
-                    'text-align': 'left'
-                }), height=300)
+                st.dataframe(df.describe(include='all'), height=300)
             with tab2:
                 st.markdown('<div class="section-title">Phân Phối Biến Số</div>', unsafe_allow_html=True)
                 numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
@@ -964,6 +1027,77 @@ if st.session_state.df_jobs is not None:
                         )
 
     # --- END PAGE: DỰ ĐOÁN LƯƠNG (AI) ---
+    # --------------------------------------------------------------------------
+
+    # --------------------------------------------------------------------------
+    # --- PAGE: INSIGHT VỀ CÔNG VIỆC (GEMINI) ---
+    # --------------------------------------------------------------------------
+    elif selected_page == page_options[6]: # Adjust index if page_options order changes
+        st.title("💡Cố vấn AI (Gemini)")
+
+        if not ai_configured_successfully:
+            st.error("🚨 Cấu hình AI thất bại hoặc thiếu API Key. Vui lòng kiểm tra GEMINI_API_KEY trong file .env hoặc cấu hình secrets.")
+            st.warning("Tab này sẽ không hoạt động cho đến khi AI được cấu hình thành công.")
+            st.stop() # Stop rendering this tab further
+
+        # Use the main dataframe loaded by Final_Tam.py
+        df_for_ai = st.session_state.get('df_jobs')
+
+        if df_for_ai is None:
+            st.warning("⚠️ Vui lòng tải lên hoặc chờ dữ liệu được xử lý để sử dụng tính năng này.")
+        else:
+            st.info("Chức năng này sử dụng Google Gemini AI để cung cấp thông tin chi tiết và trả lời câu hỏi dựa trên dữ liệu tuyển dụng hiện tại.")
+            
+            with st.expander("Xem thông tin và dữ liệu mẫu được cung cấp cho AI", expanded=False):
+                st.subheader("Thông tin tổng quan về dữ liệu (cho AI)")
+                dataset_info_str = get_dataset_info(df_for_ai)
+                st.text_area("Dataset Info (Text):", dataset_info_str, height=300)
+
+                st.subheader("Dữ liệu mẫu (cho AI)")
+                # Prepare data rows similar to Final.py for AI context
+                try:
+                    # Convert relevant part of DataFrame to string list for AI context
+                    # Using df_for_ai which is the full dataset loaded by Final_Tam.py
+                    csv_string_data = df_for_ai.to_csv(index=False, header=True, quoting=csv.QUOTE_MINIMAL)
+                    data_rows_for_ai = csv_string_data.splitlines()
+                    
+                    max_rows_to_feed = 500  # Adjust based on token limits or performance needs
+                    data_summary_for_ai = "\\n".join(data_rows_for_ai[:max_rows_to_feed])
+                    if len(data_rows_for_ai) > max_rows_to_feed:
+                        data_summary_for_ai += f"\\n... (Dữ liệu được cắt ngắn còn {max_rows_to_feed} dòng trong tổng số {len(data_rows_for_ai)} dòng)"
+                    st.text_area("Dữ liệu dạng CSV (một phần) gửi cho AI:", data_summary_for_ai, height=200)
+                except Exception as e:
+                    st.error(f"Lỗi khi chuẩn bị dữ liệu cho AI: {e}")
+                    data_summary_for_ai = "Không có dữ liệu do lỗi." # Fallback
+
+            # Combine dataset info and row data for the AI context
+            data_context_for_ai = f"""
+            Thông tin Dataset:
+            {dataset_info_str}
+            
+            Một phần dữ liệu (CSV format):
+            {data_summary_for_ai if 'data_summary_for_ai' in locals() and data_summary_for_ai != "Không có dữ liệu do lỗi." else "Không có dữ liệu mẫu."}
+            """
+
+            st.divider()
+
+            # --- User Input and AI Feedback ---
+            st.subheader("💬 Đặt câu hỏi cho AI")
+            user_query = st.text_area("Câu hỏi của bạn về dữ liệu tuyển dụng:", height=100, 
+                                      placeholder="Ví dụ: Các kỹ năng nào đang được yêu cầu nhiều nhất cho vị trí Data Analyst? Mức lương trung bình cho các vị trí Fresher là bao nhiêu?")
+
+            if st.button("Gửi câu hỏi cho AI", type="primary", key="ai_ask_button"):
+                if not user_query:
+                    st.warning("Vui lòng nhập câu hỏi.")
+                elif not ai_configured_successfully or genai_model is None:
+                    st.error("AI chưa sẵn sàng. Vui lòng kiểm tra cấu hình.")
+                else:
+                    with st.spinner("🤖 AI đang suy nghĩ..."):
+                        feedback = generate_feedback(data_context_for_ai, user_query)
+                        st.subheader("AI trả lời:")
+                        st.markdown(feedback) # Use markdown to render potential formatting
+
+    # --- INSIGHT VỀ CÔNG VIỆC (GEMINI) ---
     # --------------------------------------------------------------------------
 
 # --- Thông báo nếu chưa tải file ---
